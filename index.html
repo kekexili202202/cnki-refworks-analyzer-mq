@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CNKI RefWorks 批量分析 · 年份与刊源统计</title>
+<!-- 引入 ECharts 图表库 -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; }
   body { background: linear-gradient(145deg, #f6f9fc 0%, #e9f1f8 100%); font-family: system-ui, -apple-system, sans-serif; padding: 2rem 1rem; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; }
@@ -55,7 +57,7 @@
   .stat-bar { height: 100%; border-radius: 30px; background: linear-gradient(90deg, #79b8e0, #2b7aac); transition: width 0.35s ease; }
 
   /* 图表 */
-  .chart-container { width: 100%; height: 380px; position: relative; display: flex; justify-content: center; align-items: center; }
+  #chartContainer { width: 100%; height: 420px; }
   .empty-message { color: #809aae; font-style: italic; text-align: center; padding: 2rem 0.5rem; font-size: 0.95rem; }
   .error-message { color: #b13e3e; background: #ffe9e9; padding: 0.8rem 1.2rem; border-radius: 40px; margin-top: 1.2rem; font-size: 0.9rem; border-left: 4px solid #c55252; display: none; }
 
@@ -77,7 +79,7 @@
   <h1>📊 CNKI RefWorks 批量分析</h1>
   <div class="subhead">
     <span>按年份统计发文量 · 按刊源统计文章数</span>
-    <span class="hint">支持多选 .txt 及 SVG 导出</span>
+    <span class="hint">支持多选 .txt 及高清图表导出</span>
   </div>
 
   <!-- 上传区 -->
@@ -126,7 +128,7 @@
   <!-- 图表区 -->
   <div class="chart-panel">
     <div class="panel-header">
-      <h2>📈 可视化图表 (纯矢量)</h2>
+      <h2>📈 可视化图表 (ECharts)</h2>
       <div class="panel-actions">
         <button class="mini-btn active" id="chartDataYear">年份分布</button>
         <button class="mini-btn" id="chartDataSource">期刊分布</button>
@@ -135,10 +137,10 @@
         <button class="mini-btn" id="chartTypeLine">折线图</button>
         <button class="mini-btn" id="chartTypePie">饼图</button>
         <span style="border-left: 1px solid #cde0ee; margin: 0 0.3rem;"></span>
-        <button class="mini-btn" id="exportSvgBtn" style="background:#e2eefb; color:#2b7aac; font-weight:bold;">⬇️ 导出 SVG</button>
+        <button class="mini-btn" id="exportImgBtn" style="background:#e2eefb; color:#2b7aac; font-weight:bold;">⬇️ 导出图片</button>
       </div>
     </div>
-    <div class="chart-container" id="chartContainer">
+    <div id="chartContainer">
       <div class="empty-message">暂无数据，请上传文件</div>
     </div>
   </div>
@@ -148,7 +150,7 @@
   <div class="footer-bar">
     <div class="file-info" id="fileInfoBar"></div>
     <div class="footer-actions">
-      <button class="btn-primary" id="exportCsvBtn" disabled>⬇️ 导出 CSV</button>
+      <button class="btn-primary" id="exportCsvBtn" disabled>⬇️ 导出 CSV 数据</button>
       <button class="reset-btn" id="resetBtn">⟳ 清空全部</button>
     </div>
   </div>
@@ -181,7 +183,8 @@
   const chartTypeBarBtn = document.getElementById('chartTypeBar');
   const chartTypeLineBtn = document.getElementById('chartTypeLine');
   const chartTypePieBtn = document.getElementById('chartTypePie');
-  const exportSvgBtn = document.getElementById('exportSvgBtn');
+  const exportImgBtn = document.getElementById('exportImgBtn');
+  const chartContainer = document.getElementById('chartContainer');
 
   let currentFiles = [];
   let stats = { years: new Map(), sources: new Map(), articleCount: 0 };
@@ -189,6 +192,7 @@
   let sourceSortMode = 'count';
   let chartDataMode = 'year';
   let chartTypeMode = 'bar';
+  let myChart = null;
 
   function escapeHtml(s) {
     return String(s||'').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -286,63 +290,128 @@
   function renderChart() {
     let entries = chartDataMode === 'year' ? Array.from(stats.years.entries()) : Array.from(stats.sources.entries());
     if (chartDataMode === 'year') entries.sort((a, b) => a[0].localeCompare(b[0]));
-    else { entries.sort((a, b) => b[1] - a[1]); entries = entries.slice(0, 15); }
+    else { entries.sort((a, b) => b[1] - a[1]); entries = entries.slice(0, 15); } // 最多显示前15个期刊
 
-    const container = document.getElementById('chartContainer');
-    if (entries.length === 0) { container.innerHTML = '<div class="empty-message">暂无数据</div>'; return; }
-
-    const w = 900, h = 380, pad = 50;
-    const colors = ['#2b7aac', '#79b8e0', '#4fa0d0', '#1f6690', '#a0cbf0', '#559dc7', '#89c1e8', '#398ab5', '#13476a', '#65a9d8'];
-    let svg = `<svg id="mySvg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" style="width:100%;height:100%;">`;
-    svg += `<style>.t{font-family:sans-serif;font-size:13px;fill:#555;} .v{font-weight:bold;font-size:13px;fill:#0b3d60;text-anchor:middle;}</style>`;
-
-    if (chartTypeMode === 'bar' || chartTypeMode === 'line') {
-      const max = Math.max(...entries.map(x => x[1]));
-      const cw = (w - pad * 2) / entries.length;
-      svg += `<line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="#ccc" />`;
-      svg += `<line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h - pad}" stroke="#ccc" />`;
-      const points = [];
-      entries.forEach(([label, val], i) => {
-        const bh = (val / max) * (h - pad * 2);
-        const x = pad + i * cw + cw / 2;
-        const y = h - pad - bh;
-        let shortLabel = label.length > 7 ? label.slice(0, 7) + '…' : label;
-        svg += `<text x="${x}" y="${h - pad + 20}" class="t" text-anchor="middle">${escapeHtml(shortLabel)}</text>`;
-        if (chartTypeMode === 'bar') {
-          svg += `<rect x="${x - cw * 0.3}" y="${y}" width="${cw * 0.6}" height="${bh}" fill="${colors[i % colors.length]}" rx="4" />`;
-          svg += `<text x="${x}" y="${y - 8}" class="v">${val}</text>`;
-        } else {
-          points.push(`${x},${y}`);
-          svg += `<circle cx="${x}" cy="${y}" r="5" fill="#2b7aac" />`;
-          svg += `<text x="${x}" y="${y - 12}" class="v">${val}</text>`;
-        }
-      });
-      if (chartTypeMode === 'line' && points.length > 0) {
-        svg += `<polyline points="${points.join(' ')}" fill="none" stroke="#2b7aac" stroke-width="3" stroke-linejoin="round" />`;
-      }
-    } else if (chartTypeMode === 'pie') {
-      const total = entries.reduce((s, x) => s + x[1], 0);
-      let start = 0;
-      const cx = w / 2 - 100, cy = h / 2, r = 130;
-      entries.forEach(([label, val], i) => {
-        const angle = (val / total) * Math.PI * 2;
-        const end = start + angle;
-        const x1 = cx + r * Math.sin(start), y1 = cy - r * Math.cos(start);
-        const x2 = cx + r * Math.sin(end), y2 = cy - r * Math.cos(end);
-        const large = angle > Math.PI ? 1 : 0;
-        if (entries.length === 1) svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${colors[i % colors.length]}" />`;
-        else svg += `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${colors[i % colors.length]}" stroke="#fff" stroke-width="2" />`;
-        const ly = 40 + i * 22;
-        if (ly < h - 20) {
-          svg += `<rect x="${w - 220}" y="${ly - 12}" width="14" height="14" fill="${colors[i % colors.length]}" rx="3" />`;
-          let shortLabel = label.length > 12 ? label.slice(0, 12) + '…' : label;
-          svg += `<text x="${w - 195}" y="${ly}" class="t">${escapeHtml(shortLabel)} (${val})</text>`;
-        }
-        start = end;
-      });
+    if (entries.length === 0) {
+      if (myChart) myChart.clear();
+      chartContainer.innerHTML = '<div class="empty-message">暂无数据</div>';
+      return;
     }
-    svg += `</svg>`;
-    container.innerHTML = svg;
+
+    // 如果容器被替换为 empty-message，需要重新初始化 ECharts 容器
+    if (!myChart || chartContainer.innerHTML.includes('empty-message')) {
+      chartContainer.innerHTML = ''; // 清除文字
+      myChart = echarts.init(chartContainer);
+    }
+
+    const labels = entries.map(x => x[0]);
+    const data = entries.map(x => x[1]);
+    const yAxisName = '发文量 (篇)';
+
+    let option = {
+      tooltip: {
+        trigger: chartTypeMode === 'pie' ? 'item' : 'axis',
+        backgroundColor: 'rgba(255,255,255,0.95)',
+        borderColor: '#cde0ee',
+        textStyle: { color: '#0b3d60', fontWeight: 'bold' },
+        formatter: chartTypeMode === 'pie' ? '{b}: {c} 篇 ({d}%)' : '{b}<br/>{a}: {c} 篇'
+      },
+      grid: {
+        left: '3%', right: '4%', bottom: '15%', top: '15%', containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: labels,
+        axisLabel: {
+          interval: 0,
+          rotate: labels.length > 8 ? 30 : 0,
+          color: '#555',
+          formatter: function(value) {
+            return value.length > 8 ? value.slice(0, 8) + '...' : value;
+          }
+        },
+        axisLine: { lineStyle: { color: '#ccc' } }
+      },
+      yAxis: {
+        type: 'value',
+        name: yAxisName,
+        nameTextStyle: { color: '#333', fontWeight: 'bold', padding: [0, 0, 0, -30] },
+        axisLabel: { color: '#666' },
+        splitLine: { lineStyle: { type: 'dashed', color: '#eee' } }
+      },
+      series: []
+    };
+
+    if (chartTypeMode === 'bar') {
+      option.series.push({
+        name: '发文量',
+        type: 'bar',
+        data: data,
+        barMaxWidth: 40,
+        itemStyle: {
+          borderRadius: [6, 6, 0, 0],
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: '#4fa0d0' },
+            { offset: 1, color: '#2b7aac' }
+          ])
+        }
+      });
+    } else if (chartTypeMode === 'line') {
+      option.series.push({
+        name: '发文量',
+        type: 'line',
+        data: data,
+        smooth: true,
+        symbolSize: 8,
+        itemStyle: { color: '#2b7aac' },
+        lineStyle: { width: 3, color: '#2b7aac' },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(43,122,172,0.3)' },
+            { offset: 1, color: 'rgba(43,122,172,0.05)' }
+          ])
+        }
+      });
+    } else if (chartTypeMode === 'pie') {
+      option.xAxis = null;
+      option.yAxis = null;
+      option.grid = null;
+      option.series.push({
+        name: '发文量',
+        type: 'pie',
+        radius: ['40%', '70%'],
+        center: ['40%', '50%'], // 靠左一点给图例留空间
+        avoidLabelOverlap: false,
+        itemStyle: {
+          borderRadius: 8,
+          borderColor: '#fff',
+          borderWidth: 2
+        },
+        label: {
+          show: false,
+          position: 'center'
+        },
+        emphasis: {
+          label: {
+            show: true,
+            fontSize: 20,
+            fontWeight: 'bold',
+            formatter: '{b}\n{c} 篇'
+          }
+        },
+        labelLine: { show: false },
+        data: entries.map(([name, value]) => ({ name, value }))
+      });
+      option.legend = {
+        type: 'scroll',
+        orient: 'vertical',
+        right: '10%',
+        top: 'middle',
+        textStyle: { color: '#555' }
+      };
+    }
+
+    myChart.setOption(option, true);
   }
 
   function analyzeFiles(files) {
@@ -436,22 +505,11 @@
   }
   function csvEscape(v) { const s = String(v==null?'':v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }
 
-  // --- 严格的拖拽控制，防止浏览器直接打开文件 ---
+  // 拖拽控制
   ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    uploadArea.addEventListener(eventName, e => {
-      e.preventDefault();
-      e.stopPropagation();
-    }, false);
+    uploadArea.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }, false);
+    document.body.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }, false);
   });
-  // 在网页其他地方阻止默认行为，防止拖拽文件到空白处直接打开
-  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    document.body.addEventListener(eventName, e => {
-      e.preventDefault();
-      e.stopPropagation();
-    }, false);
-  });
-
-  // 拖拽高亮效果
   uploadArea.addEventListener('dragover', () => uploadArea.classList.add('drag-over'));
   uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
   uploadArea.addEventListener('drop', e => {
@@ -468,6 +526,9 @@
     fileInput.value = '';
   });
 
+  // 窗口自适应
+  window.addEventListener('resize', () => { if (myChart) myChart.resize(); });
+
   resetBtn.onclick = resetAll;
   exportCsvBtn.onclick = exportCsv;
   yearSortDescBtn.onclick = () => { yearSortMode = 'desc'; yearSortDescBtn.classList.add('active'); yearSortAscBtn.classList.remove('active'); renderAll(); };
@@ -481,11 +542,13 @@
   chartTypeLineBtn.onclick = () => { chartTypeMode = 'line'; chartTypeLineBtn.classList.add('active'); chartTypeBarBtn.classList.remove('active'); chartTypePieBtn.classList.remove('active'); renderChart(); };
   chartTypePieBtn.onclick = () => { chartTypeMode = 'pie'; chartTypePieBtn.classList.add('active'); chartTypeBarBtn.classList.remove('active'); chartTypeLineBtn.classList.remove('active'); renderChart(); };
 
-  exportSvgBtn.onclick = () => {
-    const svg = document.getElementById('mySvg');
-    if (!svg) return alert('暂无图表');
-    const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml;charset=utf-8" });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `CNKI图表_${chartDataMode}_${chartTypeMode}.svg`; a.click();
+  exportImgBtn.onclick = () => {
+    if (!myChart) return alert('暂无图表');
+    const url = myChart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#fff' });
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `CNKI图表_${chartDataMode}_${chartTypeMode}.png`;
+    a.click();
   };
 
   resetAll();
