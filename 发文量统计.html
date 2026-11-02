@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CNKI RefWorks 批量分析 · 年份与刊源统计</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+
+  body {
+    background: linear-gradient(145deg, #f6f9fc 0%, #e9f1f8 100%);
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    padding: 2rem 1rem;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
+
+  .card {
+    max-width: 1150px;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 2.5rem;
+    box-shadow: 0 30px 50px -20px rgba(0, 30, 60, 0.25),
+                inset 0 1px 2px rgba(255, 255, 255, 0.8);
+    padding: 2.2rem 2rem 2.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+  }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: #0b2b44;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.25rem;
+  }
+
+  h1 .emoji-badge { font-size: 2rem; }
+
+  .subhead {
+    color: #3a5e7a;
+    font-size: 1rem;
+    margin-bottom: 1.6rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1.5px dashed #cbdbe9;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .subhead .hint {
+    background: #d9e6f2;
+    padding: 0.2rem 0.9rem;
+    border-radius: 40px;
+    font-size: 0.8rem;
+    color: #1d4b6e;
+    font-weight: 500;
+  }
+
+  /* 上传区 */
+  .upload-area {
+    background: #ffffffd9;
+    border: 2px dashed #aac7e0;
+    border-radius: 2rem;
+    padding: 2rem 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 1.4rem;
+    box-shadow: 0 6px 12px -8px rgba(0, 50, 80, 0.1);
+  }
+
+  .upload-area:hover {
+    background: #f4faff;
+    border-color: #5d9bce;
+  }
+
+  .upload-area.drag-over {
+    background: #e2effa;
+    border-color: #2b7aac;
+    transform: scale(1.01);
+  }
+
+  .upload-icon { font-size: 2.8rem; margin-bottom: 0.6rem; display: block; }
+
+  .upload-text { font-weight: 500; color: #1f4a6e; font-size: 1.05rem; margin-bottom: 0.3rem; }
+
+  .upload-subtext { color: #6f8da3; font-size: 0.85rem; }
+
+  .file-input { display: none; }
+
+  .file-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-top: 0.8rem;
+  }
+
+  .file-chip {
+    background: #d9e9f8;
+    padding: 0.25rem 0.9rem;
+    border-radius: 30px;
+    font-size: 0.8rem;
+    color: #184a6e;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    max-width: 220px;
+  }
+
+  .file-chip .remove-file {
+    cursor: pointer;
+    font-weight: 700;
+    color: #5e7e98;
+    transition: color 0.15s;
+    padding: 0 4px;
+    font-size: 0.9rem;
+  }
+
+  .file-chip .remove-file:hover { color: #b13e3e; }
+
+  /* 汇总卡片 */
+  .summary-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin: 1.4rem 0 1.6rem;
+  }
+
+  @media (max-width: 720px) {
+    .summary-bar { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .summary-item {
+    background: #ffffff;
+    border-radius: 1.4rem;
+    padding: 1rem 1.2rem;
+    box-shadow: 0 8px 20px -12px rgba(0, 40, 70, 0.2);
+    border: 1px solid #dbe9f5;
+  }
+
+  .summary-item .label {
+    font-size: 0.82rem;
+    color: #5f7f9a;
+    font-weight: 500;
+    margin-bottom: 0.4rem;
+  }
+
+  .summary-item .value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #0b3d60;
+    letter-spacing: -0.02em;
+  }
+
+  /* 面板 */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.6rem;
+  }
+
+  @media (max-width: 720px) {
+    .stats-grid { grid-template-columns: 1fr; }
+    .card { padding: 1.6rem 1.2rem; border-radius: 2rem; }
+    h1 { font-size: 1.6rem; }
+  }
+
+  .stat-panel {
+    background: #ffffffea;
+    border-radius: 1.8rem;
+    padding: 1.3rem 1.4rem 1.5rem;
+    box-shadow: 0 12px 22px -12px rgba(0, 40, 70, 0.15);
+    border: 1px solid #d3e5f2;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #cde0ee;
+    padding-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .panel-header h2 {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #0d3a5a;
+  }
+
+  .panel-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .mini-btn {
+    background: #edf5fc;
+    border: 1px solid #c6dced;
+    color: #1d4e74;
+    padding: 0.25rem 0.75rem;
+    border-radius: 30px;
+    font-size: 0.76rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .mini-btn:hover { background: #dcecfb; border-color: #8fb8d8; }
+
+  .mini-btn.active {
+    background: #2b7aac;
+    border-color: #2b7aac;
+    color: #fff;
+  }
+
+  /* 统计列表 */
+  .list-container {
+    max-height: 420px;
+    overflow-y: auto;
+    padding-right: 0.2rem;
+    scrollbar-width: thin;
+    scrollbar-color: #b1cfE7 #edf4fa;
+  }
+
+  .list-container::-webkit-scrollbar { width: 6px; }
+  .list-container::-webkit-scrollbar-track { background: #edf4fa; border-radius: 10px; }
+  .list-container::-webkit-scrollbar-thumb { background: #b1cfe7; border-radius: 10px; }
+
+  .stat-item {
+    display: grid;
+    grid-template-columns: 1fr auto 90px;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.4rem;
+    border-bottom: 1px solid #edf4fa;
+    font-size: 0.95rem;
+    border-radius: 8px;
+    transition: background 0.1s;
+  }
+
+  .stat-item:last-child { border-bottom: none; }
+  .stat-item:hover { background: #f4faff; }
+
+  .stat-label {
+    font-weight: 500;
+    color: #12426b;
+    word-break: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stat-value {
+    font-weight: 700;
+    color: #0d314b;
+    background: #e2eefb;
+    padding: 0.2rem 0.75rem;
+    border-radius: 30px;
+    font-size: 0.85rem;
+    text-align: center;
+    min-width: 3.5rem;
+  }
+
+  .stat-bar-wrap {
+    background: #eef5fb;
+    border-radius: 30px;
+    height: 8px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .stat-bar {
+    height: 100%;
+    border-radius: 30px;
+    background: linear-gradient(90deg, #79b8e0, #2b7aac);
+    transition: width 0.35s ease;
+  }
+
+  .empty-message {
+    color: #809aae;
+    font-style: italic;
+    text-align: center;
+    padding: 2rem 0.5rem;
+    font-size: 0.95rem;
+    background: #f6fbfe;
+    border-radius: 40px;
+  }
+
+  .error-message {
+    color: #b13e3e;
+    background: #ffe9e9;
+    padding: 0.8rem 1.2rem;
+    border-radius: 40px;
+    margin-top: 1.2rem;
+    font-size: 0.9rem;
+    border-left: 4px solid #c55252;
+  }
+
+  .reset-btn {
+    background: none;
+    border: 1px solid #b8d0e5;
+    color: #295e84;
+    padding: 0.4rem 1.2rem;
+    border-radius: 30px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.1s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .reset-btn:hover { background: #deedfa; border-color: #7fa8c7; color: #0d3858; }
+
+  .footer-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.4rem;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+  }
+
+  .file-info {
+    color: #4f728b;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+
+  .footer-actions {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+
+  .btn-primary {
+    background: #2b7aac;
+    color: #fff;
+    border: none;
+    padding: 0.45rem 1.2rem;
+    border-radius: 30px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .btn-primary:hover { background: #1f6690; }
+
+  .btn-primary:disabled { background: #b3c8d8; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>
+    <span class="emoji-badge">📊</span>
+    CNKI RefWorks 批量分析
+  </h1>
+  <div class="subhead">
+    <span>按年份统计发文量 · 按刊源统计文章数</span>
+    <span class="hint">支持多选 .txt 文件</span>
+  </div>
+
+  <!-- 上传区域 -->
+  <div class="upload-area" id="uploadArea">
+    <span class="upload-icon">📤</span>
+    <div class="upload-text">点击或拖拽多个文件到此处</div>
+    <div class="upload-subtext">支持 CNKI RefWorks 导出的纯文本文件 (.txt)，可多选</div>
+    <div id="fileChipsContainer" class="file-list"></div>
+    <input type="file" id="fileInput" class="file-input" accept=".txt,text/plain" multiple>
+  </div>
+
+  <!-- 汇总卡片 -->
+  <div class="summary-bar">
+    <div class="summary-item">
+      <div class="label">📄 已解析文件</div>
+      <div class="value" id="sumFiles">0</div>
+    </div>
+    <div class="summary-item">
+      <div class="label">📚 总文章数</div>
+      <div class="value" id="sumArticles">0</div>
+    </div>
+    <div class="summary-item">
+      <div class="label">📅 年份种类</div>
+      <div class="value" id="sumYears">0</div>
+    </div>
+    <div class="summary-item">
+      <div class="label">🏷️ 期刊种类</div>
+      <div class="value" id="sumSources">0</div>
+    </div>
+  </div>
+
+  <!-- 统计面板 -->
+  <div class="stats-grid">
+    <!-- 发刊时间统计 -->
+    <div class="stat-panel">
+      <div class="panel-header">
+        <h2>📅 发刊时间</h2>
+        <span class="count-badge" id="yearCount">0 个年份</span>
+        <div class="panel-actions">
+          <button class="mini-btn active" id="yearSortDesc" type="button">新→旧</button>
+          <button class="mini-btn" id="yearSortAsc" type="button">旧→新</button>
+        </div>
+      </div>
+      <div class="list-container" id="yearList">
+        <div class="empty-message">暂无数据，请上传文件</div>
+      </div>
+    </div>
+
+    <!-- 刊源数量统计 -->
+    <div class="stat-panel">
+      <div class="panel-header">
+        <h2>📚 发文刊源</h2>
+        <span class="count-badge" id="sourceCount">0 个刊源</span>
+        <div class="panel-actions">
+          <button class="mini-btn active" id="sourceSortCount" type="button">按数量</button>
+          <button class="mini-btn" id="sourceSortName" type="button">按名称</button>
+        </div>
+      </div>
+      <div class="list-container" id="sourceList">
+        <div class="empty-message">暂无数据，请上传文件</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 错误提示 -->
+  <div id="errorBox" class="error-message" style="display: none;"></div>
+
+  <!-- 底部 -->
+  <div class="footer-bar">
+    <div class="file-info" id="fileInfoBar"></div>
+    <div class="footer-actions">
+      <button class="btn-primary" id="exportCsvBtn" type="button" disabled>⬇️ 导出 CSV</button>
+      <button class="reset-btn" id="resetBtn" type="button">⟳ 清空全部</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    // ---------- DOM ----------
+    const uploadArea         = document.getElementById('uploadArea');
+    const fileInput          = document.getElementById('fileInput');
+    const fileChipsContainer = document.getElementById('fileChipsContainer');
+    const yearListEl         = document.getElementById('yearList');
+    const sourceListEl       = document.getElementById('sourceList');
+    const yearCountEl        = document.getElementById('yearCount');
+    const sourceCountEl      = document.getElementById('sourceCount');
+    const errorBox           = document.getElementById('errorBox');
+    const resetBtn           = document.getElementById('resetBtn');
+    const fileInfoBar        = document.getElementById('fileInfoBar');
+    const exportCsvBtn       = document.getElementById('exportCsvBtn');
+
+    const sumFilesEl    = document.getElementById('sumFiles');
+    const sumArticlesEl = document.getElementById('sumArticles');
+    const sumYearsEl    = document.getElementById('sumYears');
+    const sumSourcesEl  = document.getElementById('sumSources');
+
+    const yearSortAscBtn     = document.getElementById('yearSortAsc');
+    const yearSortDescBtn    = document.getElementById('yearSortDesc');
+    const sourceSortCountBtn = document.getElementById('sourceSortCount');
+    const sourceSortNameBtn  = document.getElementById('sourceSortName');
+
+    // ---------- 状态 ----------
+    let currentFiles = [];
+    let stats = {
+      years: new Map(),
+      sources: new Map(),
+      articleCount: 0
+    };
+    let yearSortMode   = 'desc';
+    let sourceSortMode = 'count';
+
+    // ---------- 工具 ----------
+    function escapeHtml(s) {
+      if (!s) return '';
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.style.display = 'block';
+      if (errorBox._timeout) clearTimeout(errorBox._timeout);
+      errorBox._timeout = setTimeout(() => {
+        errorBox.style.display = 'none';
+      }, 6000);
+    }
+
+    function hideError() {
+      errorBox.style.display = 'none';
+      if (errorBox._timeout) {
+        clearTimeout(errorBox._timeout);
+        errorBox._timeout = null;
+      }
+    }
+
+    // ---------- RefWorks 解析 ----------
+    function parseRefWorks(text) {
+      const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
+      const records = [];
+      let current = null;
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+
+        const upper = line.toUpperCase();
+
+        if (upper.startsWith('RT ')) {
+          if (current) records.push(current);
+          current = { year: null, source: null };
+          continue;
+        }
+
+        if (!current) {
+          if (
+            upper.startsWith('JF ') || upper.startsWith('T1 ') ||
+            upper.startsWith('YR ') || upper.startsWith('A1 ')
+          ) {
+            current = { year: null, source: null };
+          } else {
+            continue;
+          }
+        }
+
+        const m =
+          line.match(/^([A-Z][A-Z0-9])\s+(.*)$/i) ||
+          line.match(/^([A-Z][A-Z0-9]):\s*(.*)$/i) ||
+          line.match(/^([A-Z][A-Z0-9])\t(.*)$/i);
+
+        if (!m) continue;
+
+        const tag   = m[1].toUpperCase();
+        const value = m[2].trim();
+        if (!value) continue;
+
+        if (['JF', 'JO', 'T2', 'JA'].includes(tag) && !current.source) {
+          current.source = value;
+        }
+        if (['YR', 'PY'].includes(tag) && !current.year) {
+          const ym = value.match(/\b(19|20)\d{2}\b/);
+          if (ym) current.year = ym[0];
+          else if (/^\d{4}$/.test(value)) current.year = value;
+        }
+        if (tag === 'DA' && !current.year) {
+          const ym = value.match(/\b(19|20)\d{2}\b/);
+          if (ym) current.year = ym[0];
+        }
+      }
+
+      if (current) records.push(current);
+
+      const years   = new Map();
+      const sources = new Map();
+      let count = 0;
+
+      for (const r of records) {
+        let has = false;
+        if (r.year) {
+          years.set(r.year, (years.get(r.year) || 0) + 1);
+          has = true;
+        }
+        if (r.source) {
+          sources.set(r.source, (sources.get(r.source) || 0) + 1);
+          has = true;
+        }
+        if (has) count++;
+      }
+
+      if (years.size === 0 && sources.size === 0 && text.trim()) {
+        const yearRe   = /\bYR\s+([^\r\n]+)/gi;
+        const sourceRe = /\b(?:JF|JO|T2)\s+([^\r\n]+)/gi;
+        let m;
+        while ((m = yearRe.exec(text)) !== null) {
+          const ym = m[1].match(/\b(19|20)\d{2}\b/);
+          if (ym) {
+            years.set(ym[0], (years.get(ym[0]) || 0) + 1);
+            count++;
+          }
+        }
+        while ((m = sourceRe.exec(text)) !== null) {
+          const s = m[1].trim();
+          if (s) {
+            sources.set(s, (sources.get(s) || 0) + 1);
+            count++;
+          }
+        }
+      }
+
+      return { years, sources, count };
+    }
+
+    // ---------- 渲染 ----------
+    function renderAll() {
+      renderSummary();
+      renderYears();
+      renderSources();
+      renderFileInfo();
+
+      const hasData = stats.years.size > 0 || stats.sources.size > 0;
+      exportCsvBtn.disabled = !hasData;
+    }
+
+    function renderSummary() {
+      sumFilesEl.textContent    = currentFiles.length;
+      sumArticlesEl.textContent = stats.articleCount;
+      sumYearsEl.textContent    = stats.years.size;
+      sumSourcesEl.textContent  = stats.sources.size;
+    }
+
+    function renderFileInfo() {
+      if (currentFiles.length === 0) {
+        fileInfoBar.textContent = '';
+      } else {
+        fileInfoBar.textContent =
+          `已加载 ${currentFiles.length} 个文件 · 共识别 ${stats.articleCount} 条记录`;
+      }
+    }
+
+    function renderYears() {
+      const entries = Array.from(stats.years.entries());
+      yearCountEl.textContent = `${entries.length} 个年份`;
+
+      if (entries.length === 0) {
+        yearListEl.innerHTML = '<div class="empty-message">未解析到发刊年份</div>';
+        return;
+      }
+
+      entries.sort((a, b) =>
+        yearSortMode === 'desc'
+          ? b[0].localeCompare(a[0])
+          : a[0].localeCompare(b[0])
+      );
+
+      const max = Math.max(...entries.map(e => e[1]));
+      const total = entries.reduce((s, e) => s + e[1], 0);
+
+      yearListEl.innerHTML = entries.map(([year, count]) => {
+        const pct = total ? (count / total * 100) : 0;
+        const width = max ? (count / max * 100) : 0;
+        return `
+          <div class="stat-item" title="${escapeHtml(year)} 年：${count} 篇（${pct.toFixed(1)}%）">
+            <span class="stat-label">${escapeHtml(year)} 年</span>
+            <span class="stat-value">${count} 篇</span>
+            <div class="stat-bar-wrap"><div class="stat-bar" style="width:${width}%"></div></div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderSources() {
+      const entries = Array.from(stats.sources.entries());
+      sourceCountEl.textContent = `${entries.length} 个刊源`;
+
+      if (entries.length === 0) {
+        sourceListEl.innerHTML = '<div class="empty-message">未解析到刊源信息</div>';
+        return;
+      }
+
+      if (sourceSortMode === 'count') {
+        entries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      } else {
+        entries.sort((a, b) => a[0].localeCompare(b[0]));
+      }
+
+      const max = Math.max(...entries.map(e => e[1]));
+      const total = entries.reduce((s, e) => s + e[1], 0);
+
+      sourceListEl.innerHTML = entries.map(([source, count]) => {
+        const pct = total ? (count / total * 100) : 0;
+        const width = max ? (count / max * 100) : 0;
+        return `
+          <div class="stat-item" title="${escapeHtml(source)}：${count} 篇（${pct.toFixed(1)}%）">
+            <span class="stat-label">${escapeHtml(source)}</span>
+            <span class="stat-value">${count} 篇</span>
+            <div class="stat-bar-wrap"><div class="stat-bar" style="width:${width}%"></div></div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // ---------- 文件芯片 ----------
+    function renderFileChips() {
+      if (currentFiles.length === 0) {
+        fileChipsContainer.innerHTML = '';
+        return;
+      }
+      const maxShow = 8;
+      const show = currentFiles.slice(0, maxShow);
+      const extra = currentFiles.length - maxShow;
+
+      let html = show.map((file, i) => {
+        const name = file.name.length > 25 ? file.name.slice(0, 22) + '…' : file.name;
+        return `<span class="file-chip" title="${escapeHtml(file.name)}">
+          📄 ${escapeHtml(name)}
+          <span class="remove-file" data-index="${i}" title="移除该文件">✕</span>
+        </span>`;
+      }).join('');
+
+      if (extra > 0) {
+        html += `<span class="file-chip" style="background:#c1d9ef;">+${extra} 个文件</span>`;
+      }
+
+      fileChipsContainer.innerHTML = html;
+
+      fileChipsContainer.querySelectorAll('.remove-file').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const idx = parseInt(btn.dataset.index, 10);
+          if (!isNaN(idx) && idx < currentFiles.length) {
+            currentFiles.splice(idx, 1);
+            renderFileChips();
+            if (currentFiles.length === 0) {
+              resetStats();
+            } else {
+              analyzeFiles(currentFiles);
+            }
+          }
+        });
+      });
+    }
+
+    // ---------- 核心分析 ----------
+    function analyzeFiles(files) {
+      hideError();
+
+      const totalYears   = new Map();
+      const totalSources = new Map();
+      let totalArticles  = 0;
+      let errorMsgs      = [];
+
+      const tasks = files.map(file => new Promise(resolve => {
+        const isTxt = file.type === 'text/plain' || /\.txt$/i.test(file.name);
+        if (!isTxt) {
+          errorMsgs.push(`${file.name}：不是 .txt 文件，已跳过`);
+          return resolve();
+        }
+
+        const reader = new FileReader();
+        reader.onload = ev => {
+          try {
+            const text = ev.target.result;
+            if (!text || !text.trim()) {
+              errorMsgs.push(`${file.name}：内容为空`);
+              return resolve();
+            }
+            const { years, sources, count } = parseRefWorks(text);
+            years.forEach((c, y) => totalYears.set(y, (totalYears.get(y) || 0) + c));
+            sources.forEach((c, s) => totalSources.set(s, (totalSources.get(s) || 0) + c));
+            totalArticles += count;
+          } catch (err) {
+            console.error(err);
+            errorMsgs.push(`${file.name}：解析出错`);
+          }
+          resolve();
+        };
+        reader.onerror = () => {
+          errorMsgs.push(`${file.name}：读取失败`);
+          resolve();
+        };
+        reader.readAsText(file, 'UTF-8');
+      }));
+
+      Promise.all(tasks).then(() => {
+        stats = {
+          years: totalYears,
+          sources: totalSources,
+          articleCount: totalArticles
+        };
+        renderAll();
+
+        if (errorMsgs.length) showError(errorMsgs.join('；'));
+      });
+    }
+
+    function resetStats() {
+      stats = { years: new Map(), sources: new Map(), articleCount: 0 };
+      renderAll();
+    }
+
+    function resetAll() {
+      currentFiles = [];
+      resetStats();
+      fileChipsContainer.innerHTML = '';
+      fileInput.value = '';
+      hideError();
+    }
+
+    // ---------- 添加文件 ----------
+    function addFiles(fileList) {
+      hideError();
+
+      const incoming = Array.from(fileList);
+      const txts = incoming.filter(f => f.type === 'text/plain' || /\.txt$/i.test(f.name));
+
+      if (txts.length === 0) {
+        showError('请上传 .txt 文件');
+        return;
+      }
+
+      const ignored = incoming.length - txts.length;
+      if (ignored > 0) showError(`已忽略 ${ignored} 个非 .txt 文件`);
+
+      const existing = new Set(currentFiles.map(f => `${f.name}_${f.size}`));
+      const added = [];
+      for (const f of txts) {
+        const key = `${f.name}_${f.size}`;
+        if (!existing.has(key)) {
+          existing.add(key);
+          added.push(f);
+        }
+      }
+
+      if (added.length === 0) {
+        showError('所选文件已全部存在');
+        return;
+      }
+
+      currentFiles = currentFiles.concat(added);
+      renderFileChips();
+      analyzeFiles(currentFiles);
+    }
+
+    // ---------- CSV 导出 ----------
+    function exportCsv() {
+      const lines = [];
+      lines.push('类型,名称,数量,占比(%)');
+      const totalYearCount   = Array.from(stats.years.values()).reduce((a, b) => a + b, 0);
+      const totalSourceCount = Array.from(stats.sources.values()).reduce((a, b) => a + b, 0);
+
+      const yearEntries = Array.from(stats.years.entries());
+      yearEntries.sort((a, b) =>
+        yearSortMode === 'desc' ? b[0].localeCompare(a[0]) : a[0].localeCompare(b[0])
+      );
+      for (const [y, c] of yearEntries) {
+        const pct = totalYearCount ? (c / totalYearCount * 100).toFixed(2) : '0.00';
+        lines.push(`年份,${csvEscape(y)},${c},${pct}`);
+      }
+
+      const sourceEntries = Array.from(stats.sources.entries());
+      if (sourceSortMode === 'count') {
+        sourceEntries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      } else {
+        sourceEntries.sort((a, b) => a[0].localeCompare(b[0]));
+      }
+      for (const [s, c] of sourceEntries) {
+        const pct = totalSourceCount ? (c / totalSourceCount * 100).toFixed(2) : '0.00';
+        lines.push(`刊源,${csvEscape(s)},${c},${pct}`);
+      }
+
+      const csv = '\uFEFF' + lines.join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cnki_refworks_stats_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function csvEscape(v) {
+      const s = String(v == null ? '' : v);
+      if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    }
+
+    // ---------- 事件 ----------
+    uploadArea.addEventListener('click', e => {
+      if (e.target.closest('.remove-file')) return;
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', e => {
+      if (e.target.files && e.target.files.length) addFiles(e.target.files);
+      fileInput.value = '';
+    });
+
+    uploadArea.addEventListener('dragover', e => {
+      e.preventDefault();
+      uploadArea.classList.add('drag-over');
+    });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+    uploadArea.addEventListener('drop', e => {
+      e.preventDefault();
+      uploadArea.classList.remove('drag-over');
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        addFiles(e.dataTransfer.files);
+      }
+    });
+
+    window.addEventListener('dragover', e => e.preventDefault());
+    window.addEventListener('drop', e => e.preventDefault());
+
+    resetBtn.addEventListener('click', resetAll);
+    exportCsvBtn.addEventListener('click', exportCsv);
+
+    yearSortDescBtn.addEventListener('click', () => {
+      yearSortMode = 'desc';
+      yearSortDescBtn.classList.add('active');
+      yearSortAscBtn.classList.remove('active');
+      renderYears();
+    });
+    yearSortAscBtn.addEventListener('click', () => {
+      yearSortMode = 'asc';
+      yearSortAscBtn.classList.add('active');
+      yearSortDescBtn.classList.remove('active');
+      renderYears();
+    });
+
+    sourceSortCountBtn.addEventListener('click', () => {
+      sourceSortMode = 'count';
+      sourceSortCountBtn.classList.add('active');
+      sourceSortNameBtn.classList.remove('active');
+      renderSources();
+    });
+    sourceSortNameBtn.addEventListener('click', () => {
+      sourceSortMode = 'name';
+      sourceSortNameBtn.classList.add('active');
+      sourceSortCountBtn.classList.remove('active');
+      renderSources();
+    });
+
+    resetAll();
+  })();
+</script>
+</body>
+</html>
