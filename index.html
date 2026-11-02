@@ -12,7 +12,7 @@
   .subhead { color: #3a5e7a; font-size: 1rem; margin-bottom: 1.6rem; padding-bottom: 0.75rem; border-bottom: 1.5px dashed #cbdbe9; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 0.75rem; }
   .subhead .hint { background: #d9e6f2; padding: 0.2rem 0.9rem; border-radius: 40px; font-size: 0.8rem; color: #1d4b6e; font-weight: 500; }
 
-  /* 原始上传区样式 */
+  /* 上传区 */
   .upload-area { background: #ffffffd9; border: 2px dashed #aac7e0; border-radius: 2rem; padding: 2rem 1.5rem; text-align: center; cursor: pointer; transition: all 0.2s ease; margin-bottom: 1.4rem; box-shadow: 0 6px 12px -8px rgba(0, 50, 80, 0.1); }
   .upload-area:hover { background: #f4faff; border-color: #5d9bce; }
   .upload-area.drag-over { background: #e2effa; border-color: #2b7aac; transform: scale(1.01); }
@@ -156,7 +156,6 @@
 
 <script>
 (function () {
-  // --- 变量声明 ---
   const uploadArea = document.getElementById('uploadArea');
   const fileInput = document.getElementById('fileInput');
   const fileChipsContainer = document.getElementById('fileChipsContainer');
@@ -177,7 +176,6 @@
   const sourceSortCountBtn = document.getElementById('sourceSortCount');
   const sourceSortNameBtn = document.getElementById('sourceSortName');
   
-  // 图表按钮
   const chartDataYearBtn = document.getElementById('chartDataYear');
   const chartDataSourceBtn = document.getElementById('chartDataSource');
   const chartTypeBarBtn = document.getElementById('chartTypeBar');
@@ -192,7 +190,6 @@
   let chartDataMode = 'year';
   let chartTypeMode = 'bar';
 
-  // --- 工具函数 ---
   function escapeHtml(s) {
     return String(s||'').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
@@ -204,7 +201,6 @@
   }
   function hideError() { errorBox.style.display = 'none'; }
 
-  // --- 解析逻辑 ---
   function parseRefWorks(text) {
     const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
     const records = [];
@@ -248,7 +244,6 @@
     return { years, sources, count };
   }
 
-  // --- 渲染 UI ---
   function renderAll() {
     sumFilesEl.textContent = currentFiles.length;
     sumArticlesEl.textContent = stats.articleCount;
@@ -257,7 +252,6 @@
     fileInfoBar.textContent = currentFiles.length ? `已加载 ${currentFiles.length} 个文件 · 共识别 ${stats.articleCount} 条记录` : '';
     exportCsvBtn.disabled = !(stats.years.size > 0 || stats.sources.size > 0);
 
-    // 年份
     const ye = Array.from(stats.years.entries());
     yearCountEl.textContent = `${ye.length} 个年份`;
     if (!ye.length) yearListEl.innerHTML = '<div class="empty-message">未解析到发刊年份</div>';
@@ -272,7 +266,6 @@
         </div>`).join('');
     }
 
-    // 刊源
     const se = Array.from(stats.sources.entries());
     sourceCountEl.textContent = `${se.length} 个刊源`;
     if (!se.length) sourceListEl.innerHTML = '<div class="empty-message">未解析到刊源信息</div>';
@@ -290,7 +283,6 @@
     renderChart();
   }
 
-  // --- 渲染 SVG 图表 ---
   function renderChart() {
     let entries = chartDataMode === 'year' ? Array.from(stats.years.entries()) : Array.from(stats.sources.entries());
     if (chartDataMode === 'year') entries.sort((a, b) => a[0].localeCompare(b[0]));
@@ -353,7 +345,6 @@
     container.innerHTML = svg;
   }
 
-  // --- 核心分析 ---
   function analyzeFiles(files) {
     hideError();
     const totalYears = new Map(), totalSources = new Map();
@@ -380,7 +371,6 @@
     });
   }
 
-  // --- 文件操作 ---
   function renderFileChips() {
     if (!currentFiles.length) { fileChipsContainer.innerHTML = ''; return; }
     const show = currentFiles.slice(0, 8);
@@ -433,7 +423,6 @@
     analyzeFiles(currentFiles);
   }
 
-  // --- 导出功能 ---
   function exportCsv() {
     const lines = ['类型,名称,数量,占比(%)'];
     const ty = Array.from(stats.years.values()).reduce((a, b) => a + b, 0);
@@ -447,14 +436,37 @@
   }
   function csvEscape(v) { const s = String(v==null?'':v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }
 
-  // --- 事件绑定 ---
-  uploadArea.addEventListener('click', e => { if (!e.target.closest('.remove-file')) fileInput.click(); });
-  fileInput.addEventListener('change', e => { if (e.target.files.length) addFiles(e.target.files); fileInput.value = ''; });
-  uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+  // --- 严格的拖拽控制，防止浏览器直接打开文件 ---
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    uploadArea.addEventListener(eventName, e => {
+      e.preventDefault();
+      e.stopPropagation();
+    }, false);
+  });
+  // 在网页其他地方阻止默认行为，防止拖拽文件到空白处直接打开
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    document.body.addEventListener(eventName, e => {
+      e.preventDefault();
+      e.stopPropagation();
+    }, false);
+  });
+
+  // 拖拽高亮效果
+  uploadArea.addEventListener('dragover', () => uploadArea.classList.add('drag-over'));
   uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
-  uploadArea.addEventListener('drop', e => { e.preventDefault(); uploadArea.classList.remove('drag-over'); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
-  window.addEventListener('dragover', e => e.preventDefault());
-  window.addEventListener('drop', e => e.preventDefault());
+  uploadArea.addEventListener('drop', e => {
+    uploadArea.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+  });
+
+  // 点击上传
+  uploadArea.addEventListener('click', e => {
+    if (!e.target.closest('.remove-file')) fileInput.click();
+  });
+  fileInput.addEventListener('change', e => {
+    if (e.target.files.length) addFiles(e.target.files);
+    fileInput.value = '';
+  });
 
   resetBtn.onclick = resetAll;
   exportCsvBtn.onclick = exportCsv;
