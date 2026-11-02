@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CNKI RefWorks 批量分析 · 年份与刊源统计</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; }
 
@@ -168,6 +169,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1.6rem;
+    margin-bottom: 1.6rem;
   }
 
   @media (max-width: 720px) {
@@ -182,6 +184,16 @@
     padding: 1.3rem 1.4rem 1.5rem;
     box-shadow: 0 12px 22px -12px rgba(0, 40, 70, 0.15);
     border: 1px solid #d3e5f2;
+  }
+
+  /* 图表专属面板 */
+  .chart-panel {
+    background: #ffffffea;
+    border-radius: 1.8rem;
+    padding: 1.3rem 1.4rem 1.5rem;
+    box-shadow: 0 12px 22px -12px rgba(0, 40, 70, 0.15);
+    border: 1px solid #d3e5f2;
+    margin-top: 1.6rem;
   }
 
   .panel-header {
@@ -204,6 +216,7 @@
     margin-left: auto;
     display: flex;
     gap: 0.4rem;
+    flex-wrap: wrap;
   }
 
   .mini-btn {
@@ -365,6 +378,14 @@
   .btn-primary:hover { background: #1f6690; }
 
   .btn-primary:disabled { background: #b3c8d8; cursor: not-allowed; }
+
+  .chart-wrapper {
+    position: relative;
+    height: 400px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
 </style>
 </head>
 <body>
@@ -375,7 +396,7 @@
   </h1>
   <div class="subhead">
     <span>按年份统计发文量 · 按刊源统计文章数</span>
-    <span class="hint">支持多选 .txt 文件</span>
+    <span class="hint">支持多选 .txt 文件及图表导出</span>
   </div>
 
   <!-- 上传区域 -->
@@ -440,6 +461,26 @@
     </div>
   </div>
 
+  <!-- 图表区域 -->
+  <div class="chart-panel">
+    <div class="panel-header">
+      <h2>📈 可视化图表</h2>
+      <div class="panel-actions">
+        <button class="mini-btn active" id="chartDataYear" type="button">年份分布</button>
+        <button class="mini-btn" id="chartDataSource" type="button">期刊分布</button>
+        <span style="border-left: 1px solid #cde0ee; margin: 0 0.5rem;"></span>
+        <button class="mini-btn active" id="chartTypeBar" type="button">柱状图</button>
+        <button class="mini-btn" id="chartTypeLine" type="button">折线图</button>
+        <button class="mini-btn" id="chartTypePie" type="button">饼图</button>
+        <span style="border-left: 1px solid #cde0ee; margin: 0 0.5rem;"></span>
+        <button class="mini-btn" id="exportSvgBtn" type="button">⬇️ 导出 SVG</button>
+      </div>
+    </div>
+    <div class="chart-wrapper">
+      <canvas id="myChart"></canvas>
+    </div>
+  </div>
+
   <!-- 错误提示 -->
   <div id="errorBox" class="error-message" style="display: none;"></div>
 
@@ -447,7 +488,7 @@
   <div class="footer-bar">
     <div class="file-info" id="fileInfoBar"></div>
     <div class="footer-actions">
-      <button class="btn-primary" id="exportCsvBtn" type="button" disabled>⬇️ 导出 CSV</button>
+      <button class="btn-primary" id="exportCsvBtn" type="button" disabled>⬇️ 导出 CSV 数据</button>
       <button class="reset-btn" id="resetBtn" type="button">⟳ 清空全部</button>
     </div>
   </div>
@@ -478,6 +519,15 @@
     const sourceSortCountBtn = document.getElementById('sourceSortCount');
     const sourceSortNameBtn  = document.getElementById('sourceSortName');
 
+    // 图表相关 DOM
+    const chartDataYearBtn = document.getElementById('chartDataYear');
+    const chartDataSourceBtn = document.getElementById('chartDataSource');
+    const chartTypeBarBtn = document.getElementById('chartTypeBar');
+    const chartTypeLineBtn = document.getElementById('chartTypeLine');
+    const chartTypePieBtn = document.getElementById('chartTypePie');
+    const exportSvgBtn = document.getElementById('exportSvgBtn');
+    const ctx = document.getElementById('myChart').getContext('2d');
+
     // ---------- 状态 ----------
     let currentFiles = [];
     let stats = {
@@ -487,6 +537,18 @@
     };
     let yearSortMode   = 'desc';
     let sourceSortMode = 'count';
+
+    // 图表状态
+    let chartDataMode = 'year'; // 'year' | 'source'
+    let chartTypeMode = 'bar';  // 'bar' | 'line' | 'pie'
+    let myChart = null;
+
+    // 预设好看的图表颜色
+    const chartColors = [
+      '#2b7aac', '#79b8e0', '#4fa0d0', '#1f6690', '#a0cbf0',
+      '#559dc7', '#89c1e8', '#398ab5', '#13476a', '#65a9d8',
+      '#b1d4ee', '#206a97', '#4693c1', '#90c8ed', '#2e7b9e'
+    ];
 
     // ---------- 工具 ----------
     function escapeHtml(s) {
@@ -537,7 +599,7 @@
         if (!current) {
           if (
             upper.startsWith('JF ') || upper.startsWith('T1 ') ||
-            upper.startsWith('YR ') || upper.startsWith('A1 ')
+            upper.startsWith('YR ') || upper.startsWith('A1 ') || upper.startsWith('SR ')
           ) {
             current = { year: null, source: null };
           } else {
@@ -568,6 +630,11 @@
           const ym = value.match(/\b(19|20)\d{2}\b/);
           if (ym) current.year = ym[0];
         }
+        // 从 LK 网址里抓取年份（例如 20261102）
+        if (tag === 'LK' && !current.year) {
+          const ym = value.match(/(19|20)\d{2}/);
+          if (ym) current.year = ym[0];
+        }
       }
 
       if (current) records.push(current);
@@ -586,38 +653,20 @@
           sources.set(r.source, (sources.get(r.source) || 0) + 1);
           has = true;
         }
-        if (has) count++;
-      }
-
-      if (years.size === 0 && sources.size === 0 && text.trim()) {
-        const yearRe   = /\bYR\s+([^\r\n]+)/gi;
-        const sourceRe = /\b(?:JF|JO|T2)\s+([^\r\n]+)/gi;
-        let m;
-        while ((m = yearRe.exec(text)) !== null) {
-          const ym = m[1].match(/\b(19|20)\d{2}\b/);
-          if (ym) {
-            years.set(ym[0], (years.get(ym[0]) || 0) + 1);
-            count++;
-          }
-        }
-        while ((m = sourceRe.exec(text)) !== null) {
-          const s = m[1].trim();
-          if (s) {
-            sources.set(s, (sources.get(s) || 0) + 1);
-            count++;
-          }
-        }
+        // 确保只要有记录，即使无年份无刊源也算入总数
+        if (has || r) count++;
       }
 
       return { years, sources, count };
     }
 
-    // ---------- 渲染 ----------
+    // ---------- 渲染列表 ----------
     function renderAll() {
       renderSummary();
       renderYears();
       renderSources();
       renderFileInfo();
+      updateChart();
 
       const hasData = stats.years.size > 0 || stats.sources.size > 0;
       exportCsvBtn.disabled = !hasData;
@@ -701,6 +750,134 @@
       }).join('');
     }
 
+    // ---------- 渲染图表 ----------
+    function updateChart() {
+      let entries = [];
+      let labelStr = '';
+
+      if (chartDataMode === 'year') {
+        entries = Array.from(stats.years.entries());
+        // 年份默认按时间升序展示更符合直觉
+        entries.sort((a, b) => a[0].localeCompare(b[0]));
+        labelStr = '发文量 (篇)';
+      } else {
+        entries = Array.from(stats.sources.entries());
+        // 期刊只显示前 15 名，避免图表太卡/太乱
+        entries.sort((a, b) => b[1] - a[1]);
+        entries = entries.slice(0, 15);
+        labelStr = '文章数 (篇)';
+      }
+
+      const labels = entries.map(e => e[0]);
+      const data = entries.map(e => e[1]);
+
+      if (myChart) {
+        myChart.destroy();
+      }
+
+      if (entries.length === 0) {
+        return;
+      }
+
+      const isPie = chartTypeMode === 'pie';
+
+      // 准备饼图/柱状图的颜色
+      const bgColors = isPie || chartTypeMode === 'bar'
+        ? labels.map((_, i) => chartColors[i % chartColors.length])
+        : '#2b7aac';
+
+      const chartConfig = {
+        type: chartTypeMode,
+        data: {
+          labels: labels,
+          datasets: [{
+            label: labelStr,
+            data: data,
+            backgroundColor: bgColors,
+            borderColor: chartTypeMode === 'line' ? '#2b7aac' : '#ffffff',
+            borderWidth: chartTypeMode === 'line' ? 2 : 1,
+            fill: false,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 500 },
+          plugins: {
+            legend: {
+              display: isPie,
+              position: 'right'
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  let label = context.label || '';
+                  let value = context.parsed.y !== undefined ? context.parsed.y : context.parsed;
+                  return label + ': ' + value + ' 篇';
+                }
+              }
+            }
+          },
+          scales: isPie ? {} : {
+            y: {
+              beginAtZero: true,
+              ticks: { precision: 0 }
+            },
+            x: {
+              ticks: {
+                autoSkip: true,
+                maxRotation: 45,
+                minRotation: 45,
+                callback: function(val, index) {
+                  const label = this.getLabelForValue(val);
+                  return label.length > 15 ? label.slice(0, 15) + '…' : label;
+                }
+              }
+            }
+          }
+        }
+      };
+
+      myChart = new Chart(ctx, chartConfig);
+    }
+
+    // ---------- 导出 SVG ----------
+    function exportSvg() {
+      if (!myChart) return;
+      
+      // Chart.js 原生支持导出 base64 图片，但我们需要 SVG 格式
+      // 这里我们利用 canvas 将当前图表绘制成 SVG 容器
+      try {
+        const canvas = document.getElementById('myChart');
+        const dataURL = canvas.toDataURL('image/png');
+        
+        // 构建一个 SVG，内嵌这个 PNG 图片。虽然这不是纯粹的矢量图（文字是位图），
+        // 但由于 Canvas 不直接支持导出纯矢量 SVG，这是目前最通用且能在 PPT 里
+        // 正常显示的方法。
+        // 注：如果你想在 AI 里完全编辑文字，建议直接截图或用 AI 的图表工具重绘。
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+          <image href="${dataURL}" width="${width}" height="${height}" />
+        </svg>`;
+
+        const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cnki_chart_${chartDataMode}_${chartTypeMode}.svg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        showError('导出 SVG 失败，请检查浏览器兼容性');
+        console.error(err);
+      }
+    }
+
     // ---------- 文件芯片 ----------
     function renderFileChips() {
       if (currentFiles.length === 0) {
@@ -743,209 +920,4 @@
     }
 
     // ---------- 核心分析 ----------
-    function analyzeFiles(files) {
-      hideError();
-
-      const totalYears   = new Map();
-      const totalSources = new Map();
-      let totalArticles  = 0;
-      let errorMsgs      = [];
-
-      const tasks = files.map(file => new Promise(resolve => {
-        const isTxt = file.type === 'text/plain' || /\.txt$/i.test(file.name);
-        if (!isTxt) {
-          errorMsgs.push(`${file.name}：不是 .txt 文件，已跳过`);
-          return resolve();
-        }
-
-        const reader = new FileReader();
-        reader.onload = ev => {
-          try {
-            const text = ev.target.result;
-            if (!text || !text.trim()) {
-              errorMsgs.push(`${file.name}：内容为空`);
-              return resolve();
-            }
-            const { years, sources, count } = parseRefWorks(text);
-            years.forEach((c, y) => totalYears.set(y, (totalYears.get(y) || 0) + c));
-            sources.forEach((c, s) => totalSources.set(s, (totalSources.get(s) || 0) + c));
-            totalArticles += count;
-          } catch (err) {
-            console.error(err);
-            errorMsgs.push(`${file.name}：解析出错`);
-          }
-          resolve();
-        };
-        reader.onerror = () => {
-          errorMsgs.push(`${file.name}：读取失败`);
-          resolve();
-        };
-        reader.readAsText(file, 'UTF-8');
-      }));
-
-      Promise.all(tasks).then(() => {
-        stats = {
-          years: totalYears,
-          sources: totalSources,
-          articleCount: totalArticles
-        };
-        renderAll();
-
-        if (errorMsgs.length) showError(errorMsgs.join('；'));
-      });
-    }
-
-    function resetStats() {
-      stats = { years: new Map(), sources: new Map(), articleCount: 0 };
-      renderAll();
-    }
-
-    function resetAll() {
-      currentFiles = [];
-      resetStats();
-      fileChipsContainer.innerHTML = '';
-      fileInput.value = '';
-      hideError();
-    }
-
-    // ---------- 添加文件 ----------
-    function addFiles(fileList) {
-      hideError();
-
-      const incoming = Array.from(fileList);
-      const txts = incoming.filter(f => f.type === 'text/plain' || /\.txt$/i.test(f.name));
-
-      if (txts.length === 0) {
-        showError('请上传 .txt 文件');
-        return;
-      }
-
-      const ignored = incoming.length - txts.length;
-      if (ignored > 0) showError(`已忽略 ${ignored} 个非 .txt 文件`);
-
-      const existing = new Set(currentFiles.map(f => `${f.name}_${f.size}`));
-      const added = [];
-      for (const f of txts) {
-        const key = `${f.name}_${f.size}`;
-        if (!existing.has(key)) {
-          existing.add(key);
-          added.push(f);
-        }
-      }
-
-      if (added.length === 0) {
-        showError('所选文件已全部存在');
-        return;
-      }
-
-      currentFiles = currentFiles.concat(added);
-      renderFileChips();
-      analyzeFiles(currentFiles);
-    }
-
-    // ---------- CSV 导出 ----------
-    function exportCsv() {
-      const lines = [];
-      lines.push('类型,名称,数量,占比(%)');
-      const totalYearCount   = Array.from(stats.years.values()).reduce((a, b) => a + b, 0);
-      const totalSourceCount = Array.from(stats.sources.values()).reduce((a, b) => a + b, 0);
-
-      const yearEntries = Array.from(stats.years.entries());
-      yearEntries.sort((a, b) =>
-        yearSortMode === 'desc' ? b[0].localeCompare(a[0]) : a[0].localeCompare(b[0])
-      );
-      for (const [y, c] of yearEntries) {
-        const pct = totalYearCount ? (c / totalYearCount * 100).toFixed(2) : '0.00';
-        lines.push(`年份,${csvEscape(y)},${c},${pct}`);
-      }
-
-      const sourceEntries = Array.from(stats.sources.entries());
-      if (sourceSortMode === 'count') {
-        sourceEntries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-      } else {
-        sourceEntries.sort((a, b) => a[0].localeCompare(b[0]));
-      }
-      for (const [s, c] of sourceEntries) {
-        const pct = totalSourceCount ? (c / totalSourceCount * 100).toFixed(2) : '0.00';
-        lines.push(`刊源,${csvEscape(s)},${c},${pct}`);
-      }
-
-      const csv = '\uFEFF' + lines.join('\r\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `cnki_refworks_stats_${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }
-
-    function csvEscape(v) {
-      const s = String(v == null ? '' : v);
-      if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-      return s;
-    }
-
-    // ---------- 事件 ----------
-    uploadArea.addEventListener('click', e => {
-      if (e.target.closest('.remove-file')) return;
-      fileInput.click();
-    });
-
-    fileInput.addEventListener('change', e => {
-      if (e.target.files && e.target.files.length) addFiles(e.target.files);
-      fileInput.value = '';
-    });
-
-    uploadArea.addEventListener('dragover', e => {
-      e.preventDefault();
-      uploadArea.classList.add('drag-over');
-    });
-    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
-    uploadArea.addEventListener('drop', e => {
-      e.preventDefault();
-      uploadArea.classList.remove('drag-over');
-      if (e.dataTransfer.files && e.dataTransfer.files.length) {
-        addFiles(e.dataTransfer.files);
-      }
-    });
-
-    window.addEventListener('dragover', e => e.preventDefault());
-    window.addEventListener('drop', e => e.preventDefault());
-
-    resetBtn.addEventListener('click', resetAll);
-    exportCsvBtn.addEventListener('click', exportCsv);
-
-    yearSortDescBtn.addEventListener('click', () => {
-      yearSortMode = 'desc';
-      yearSortDescBtn.classList.add('active');
-      yearSortAscBtn.classList.remove('active');
-      renderYears();
-    });
-    yearSortAscBtn.addEventListener('click', () => {
-      yearSortMode = 'asc';
-      yearSortAscBtn.classList.add('active');
-      yearSortDescBtn.classList.remove('active');
-      renderYears();
-    });
-
-    sourceSortCountBtn.addEventListener('click', () => {
-      sourceSortMode = 'count';
-      sourceSortCountBtn.classList.add('active');
-      sourceSortNameBtn.classList.remove('active');
-      renderSources();
-    });
-    sourceSortNameBtn.addEventListener('click', () => {
-      sourceSortMode = 'name';
-      sourceSortNameBtn.classList.add('active');
-      sourceSortCountBtn.classList.remove('active');
-      renderSources();
-    });
-
-    resetAll();
-  })();
-</script>
-</body>
-</html>
+    function analyzeFiles(f
